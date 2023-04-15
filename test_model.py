@@ -1,71 +1,134 @@
-"""
-    This is a dummy program for test_model.py
-
-    It includes necessary functionalities for user, for example: 
-        - Applied argument to allow users to set up some hyper parameters
-        - Received a folder of image input
-        - Applied trained model to perform the prediciton
-        - Save the prediction result to a text file
-
-    To run the test_model.py, you can run the program using the following command:
-
-        python test_model.py --model_path /path/to/pretrained/model.pth 
-                                --image_folder_path /path/to/folder/with/images 
-                                --output_file_path /path/to/output.txt
-
-
-"""
-
-
 import os
-import argparse
-import numpy as np
 import torch
-from torchvision import transforms
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, models
 from PIL import Image
+import argparse
 
-# Define the command line arguments
-parser = argparse.ArgumentParser(description='Testing a pre-trained PyTorch model on a folder of images')
-parser.add_argument('--model_path', type=str, help='path to the pre-trained PyTorch model')
-parser.add_argument('--image_folder_path', type=str, help='path to the folder with images to be tested')
-parser.add_argument('--output_file_path', type=str, help='path to the output text file')
-args = parser.parse_args()
+class_mapping = {
+    'Golf': 0,
+    'bmw serie 1': 1,
+    'chevrolet spark': 2,
+    'chevroulet aveo': 3,
+    'clio': 4,
+    'duster': 5,
+    'hyundai i10': 6,
+    'hyundai tucson': 7,
+    'logan': 8,
+    'megane': 9,
+    'mercedes class a': 10,
+    'nemo citroen': 11,
+    'octavia': 12,
+    'picanto': 13,
+    'polo': 14,
+    'sandero': 15,
+    'seat ibiza': 16,
+    'symbol': 17,
+    'toyota corolla': 18,
+    'volkswagen tiguan': 19
+}
 
-# Load the pre-trained model
-model = torch.load(args.model_path)
+reverse_class_mapping = {v: k for k, v in class_mapping.items()}
 
-# Define the image preprocessing function
-preprocess = transforms.Compose([
-    transforms.Resize(args.target_size),
-    transforms.CenterCrop(args.target_size),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+# CarTestDataset class
+class CarTestDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.image_paths = []
+        self.class_names = os.listdir(root_dir)
 
-# Get a list of all the images in the folder
-filelist = os.listdir(args.image_folder_path)
-image_paths = [os.path.join(args.image_folder_path, file) for file in filelist]
+        for class_name in self.class_names:
+            class_dir = os.path.join(root_dir, class_name)
+            images = os.listdir(class_dir)
+            for img in images:
+                self.image_paths.append(os.path.join(class_dir, img))
 
-# Create an empty list to store the results
-results = []
+    def __len__(self):
+        return len(self.image_paths)
 
-# Loop through each image in the folder and apply the model
-for image_path in image_paths:
-    # Load the image and preprocess it
-    image = Image.open(image_path)
-    image = preprocess(image)
-    image = image.unsqueeze(0)
-    
-    # Make a prediction using the model
-    with torch.no_grad(): prediction = model(image)
-    
-    # Add the result to the list of results
-    results.append(prediction.item())
-    
-# Save the results to a text file
-with open(args.output_file_path, 'w') as f:
-    for result in results:
-        f.write(str(result) + '\n')
+    def __getitem__(self, idx):
+        img_name = self.image_paths[idx]
+        image = Image.open(img_name)
+        if self.transform:
+            image = self.transform(image)
+        return image, img_name
 
+data_transforms = {
+    'test': transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+}
 
+def save_results(saved_result_path, image_names, predicted_labels, reverse_class_mapping):
+    with open(saved_result_path, 'w') as f:
+        for img_name, label in zip(image_names, predicted_labels):
+            class_name = reverse_class_mapping[label]
+            f.write(f'{img_name}: {class_name}\n')
 
+reverse_class_mapping = {v: k for k, v in class_mapping.items()}
+
+# CarDataset class
+class CarDataset(Dataset):
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.image_paths = []
+        self.class_names = os.listdir(root_dir)
+
+        for class_name in self.class_names:
+            class_dir = os.path.join(root_dir, class_name)
+            images = os.listdir(class_dir)
+            for img in images:
+                self.image_paths.append(os.path.join(class_dir, img))
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        img_name = self.image_paths[idx]
+        image = Image.open(img_name)
+        if self.transform:
+            image = self.transform(image)
+        return image, img_name
+
+def main(test_data_path, trained_model_path, saved_result_path):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # Load the trained model
+    model = models.resnet50(pretrained=False)
+    num_features = model.fc.in_features
+    model.fc = nn.Linear(num_features, 20)
+    model.load_state_dict(torch.load(trained_model_path, map_location=device))
+    model = model.to(device)
+
+    # Create a test dataset and data loader
+    test_dataset = CarTestDataset(test_data_path, transform=data_transforms['test'])
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
+
+    model.eval()
+    image_names = []
+    predicted_labels = []
+
+    with torch.no_grad():
+        for inputs, img_name in test_loader:
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs.data, 1)
+            image_names.append(img_name[0])
+            predicted_labels.append(predicted.item())
+
+    save_results(saved_result_path, image_names, predicted_labels, reverse_class_mapping)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("test_data_path", help="Path to the test data folder")
+    parser.add_argument("trained_model_path", help="Path to the trained model file")
+    parser.add_argument("saved_result_path", help="Path to save the classification results")
+    args = parser.parse_args()
+
+    main(args.test_data_path, args.trained_model_path, args.saved_result_path)

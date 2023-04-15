@@ -123,7 +123,7 @@ if __name__ == '__main__':
         # Save the model every 5 epochs
         if (epoch + 1) % 5 == 0:
             model_save_path = os.path.join(model_save_dir, f'resnet50_epoch_{epoch+1}.pth')
-            torch.save(model.state_dict(), model_save_path)
+            torch.save(model.state_dict(), model_save_path, _use_new_zipfile_serialization=False)
             print(f'Model saved at {model_save_path}')
 
         model.eval()
