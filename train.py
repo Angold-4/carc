@@ -126,19 +126,18 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), model_save_path)
             print(f'Model saved at {model_save_path}')
 
-    # 6. Evaluate the model
+        model.eval()
+        correct = 0
+        total = 0
+
+        # 6. Evaluate the model
         print(f'Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}')
 
-    # 6. Evaluate the model
-    model.eval()
-    correct = 0
-    total = 0
-
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            print(f'Accuracy on the validation set: {100 * correct / total}%')
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+            print(f'Accuracy on the validation set (Epoch {epoch+1}): {100 * correct / total}%')
